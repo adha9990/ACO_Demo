@@ -5,13 +5,13 @@ public class ACO {
 	
 	// 由試誤法嘗試，通常 beta > alpha 以獲得最佳結果
     private double alpha = 1; // 賀爾蒙重要性
-    private double beta = 5; // 距離重要性
-	private double c = 1.0; // 模擬開始時的賀爾蒙濃度
+    private double beta = 2; // 距離重要性
+	private double c = 10; // 初始賀爾蒙濃度
 	private double evaporation = 0.8; // 賀爾蒙衰退參數，可設為0.8 ~ 0.9之間
 	private double Q = 100; // 賀爾蒙強度
 	private double antFactor = 1; // 螞蟻的數量，建議 螞蟻數量 = 節點總數量
 	
-	private int maxIterator = 100; // 執行次數
+	private int maxIterator = 10; // 執行次數
 	
 	// 不可更改
 	
@@ -30,7 +30,7 @@ public class ACO {
 	private double[] probability; // 計算造訪城市機率
 	
 	// 最佳路徑
-	private int[] bestTourOrder = null; // 最佳旅行順序
+	public int[] bestTourOrder = null; // 最佳旅行順序
 	private double bestTourLength = 0; // 最佳旅行順序
 	
 	// 初始化
@@ -73,6 +73,9 @@ public class ACO {
 	
 	// 運行模擬
 	public void execute() {
+		long time1, time2;
+		time1 = System.currentTimeMillis();
+		
 		// 設定停止條件
 		for(int i = 0; i < this.maxIterator; i++) {
 			// 螞蟻搜尋路徑
@@ -82,7 +85,13 @@ public class ACO {
 			this.updatePheromones();
 			// 更新最佳路徑
 			this.updateBest();
+			// 更新進度
+			System.out.println((double) i * 100 / this.maxIterator + "%");
 		}
+		this.test();
+		
+		time2 = System.currentTimeMillis();
+		System.out.println("執行時間：" + (time2-time1)/1000 + "秒");
 	}
 	
 	// 將螞蟻隨機投放在各個城市上
@@ -121,53 +130,72 @@ public class ACO {
 	
 	// 螞蟻選擇下一個造訪的城市
 	private int selectNextCity(Ant ant) {
-		updateProbarbility(ant);
-		return rouletteWheelSelection(ant);
+		return updateProbarbility(ant);
 	}
 	
 	// 更新轉換機率。 i => 當前城市 , j => 欲造訪城市
-	private void updateProbarbility(Ant ant) {
+	private int updateProbarbility(Ant ant) {
+		
 		int i = ant.tour[this.currentIndex];
-		// 為造訪過城市 * 線段長度倒數
+		
 		double denominator = 0; // 分母
 		for(int j = 0; j < this.numberOfCity; j++) {
 			if(!ant.isVisited(j)) {
-				denominator += Math.pow(this.pheromone[i][j], this.alpha) * Math.pow(1 / this.visibility[i][j], this.beta);
+				// 如果AB線段距離為0(同一地點)，寫在這裡可以少跑一輪迴圈
+				if(this.visibility[i][j] == 0) return j;
+				// 未造訪過城市 * 線段長度倒數
+				double reciprocal = 1 / this.visibility[i][j];
+				if(Double.isFinite(reciprocal)) {
+					denominator += Math.pow(this.pheromone[i][j], this.alpha) * Math.pow(reciprocal, this.beta);
+				}
 			}
 		}
+		
 		for(int j = 0; j < this.numberOfCity; j++) {
-			// 欲造訪城市 * 線段長度倒數
 			double numerator = 0; // 分子
 			
-			// i 造訪 j 之機率
-			if(ant.isVisited(j)) {
+			// 若 i 已造訪過 j || 分母為0
+ 			if(ant.isVisited(j) || denominator == 0) {
 				this.probability[j] = 0;
 			}else {
-				numerator = Math.pow(this.pheromone[i][j], this.alpha) * Math.pow(1 / this.visibility[i][j], this.beta);
-				this.probability[j] = numerator / denominator;				
+				// 欲造訪城市 * 線段長度倒數
+				numerator = 0;
+				double reciprocal = 1 / this.visibility[i][j];
+				if(Double.isFinite(reciprocal)) {
+					numerator = Math.pow(this.pheromone[i][j], this.alpha) * Math.pow(reciprocal, this.beta);					
+				}
+				
+				this.probability[j] = numerator / denominator;
 			}
 		}
+		
+		return rouletteWheelSelection(ant);
 	}
 	
-	// 輪盤法隨機造訪城鎮
+	// 輪盤法隨機造訪城市
 	private int rouletteWheelSelection(Ant ant) {
+		
+		// 隨機選擇城市
 		double rnd = Math.random();
 		double total = 0;
 		for(int i = 0; i < this.numberOfCity; i++) {
 			total += this.probability[i];
 			if(total > rnd) return i;
 		}
+		
 		throw new RuntimeException("沒有能造訪的城市");
 	}
 	
 	// 更新費洛蒙濃度，整體更新法
 	private void updatePheromones() {
+		
 		// 舊賀爾蒙衰退
 		for(int i = 0; i < this.numberOfCity; i++) {
 			for(int j = 0; j < this.numberOfCity; j++) {
-				this.pheromone[i][j] *= 1 - this.evaporation;
+				this.pheromone[i][j] *= this.evaporation;
 			}
 		}
+		
 		// 新費洛蒙疊加
 		for(int i = 0; i < this.numberOfAnt; i++) {
 			Ant ant = this.ants[i];
@@ -182,12 +210,12 @@ public class ACO {
 	
 	// 更新最佳路徑
 	private void updateBest() {
+		
 		for(int i = 0; i < this.numberOfAnt; i++) {
 			Ant ant = this.ants[i];
 			if(this.bestTourOrder == null || ant.length < bestTourLength) {
 				this.bestTourOrder = ant.tour;
 				this.bestTourLength = ant.length;
-				this.test();
 			}
 		}
 		
